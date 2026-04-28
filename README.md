@@ -15,6 +15,28 @@ Repo Structure
 
 ## Problem Definition
 
+### Initial general problem: 
+Forecasting global climate change
+
+### Refined specific problem statement: 
+Can we use the time-series temperature and weather data for specific locations to determine trends in climate change over long time periods?
+
+### Rationale
+The rationale for the refinement is that the original was too broad and did not specific what type of data would exactly be utilized for the 
+forecasting. Another option could have been analyzing news reports, weather reports, possibly activity in growth of coal usage or fossil fuel
+usage in general. Perhaps even the growth of companies who build factories or data centers, which might have an effect on the climate. To do 
+something relevant to individual audiencies and which will give real specific data insights, I decided to take pure numerical values to find 
+the trend and try to forecast future values.
+
+### Motivation
+The motivation for this project is to see if we can utilize data collected from specific locations over decades to determine the underlying 
+effects or movement driven by climate change. This can be observed possibly in temperature highs, temperature lows, temperature ranges, precipitation,
+maybe unusual weather, or other features. If we can train a model to understand the trend, given this small scope of information, we can build a rough
+prediction for the future trend in climate change for different locations.
+
+### Headline
+From Weather Records to Climate Signals: Forecasting What the Data Is Telling Us About Virginia's Future [Press Release](PRESSRELEASE.md)
+
 ## Domain Exposition
 
 ### Terminology:
