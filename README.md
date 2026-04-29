@@ -7,6 +7,37 @@
 
 ### Executive Summary
 
+Basic Machine Learning models geared towards climate forecasting tend to oversimplify 
+the problem by treating weather as a stationary process, ignoring long-range temporal 
+dependencies and spatial variation across geographic regions. This project addresses 
+those limitations by implementing a multi-model pipeline that captures both short-term 
+weather patterns and long-term climate trends across eight locations in Virginia.
+
+My project aims to forecast daily mean temperature using fifteen years of historical 
+weather data retrieved from the Open-Meteo Historical Weather API, which serves ERA5 
+reanalysis data produced by the ECMWF. This data was stored in a MongoDB time series 
+collection and includes thirteen meteorological features per location-day pair, covering 
+temperature, precipitation, wind, solar radiation, and evapotranspiration. To engineer 
+temporal context, lag features and cyclical encodings of day-of-year were constructed 
+to give the models awareness of seasonality and trend without requiring raw date inputs.
+
+To compare model complexity classes, two approaches were implemented. A Random Forest 
+Regressor was used as the primary interpretable baseline, trained on a tabular 
+representation of the time series using lag and rolling features, and evaluated 
+alongside a Linear Regression model. This was complemented by a Temporal Fusion 
+Transformer (TFT), a state-of-the-art architecture for multivariate time series 
+forecasting that uses multi-head attention to learn which past time steps and input 
+variables are most predictive. The TFT additionally produces probabilistic forecasts 
+with prediction intervals, providing a measure of forecast confidence across the 
+90-day horizon.
+
+This solution effectively targets the core weaknesses of naive climate ML approaches 
+by incorporating spatial diversity, long-range temporal structure, and model 
+interpretability through feature importance and attention weight analysis. The warming 
+trend analysis confirms measurable temperature increases across all eight Virginia 
+locations over the fifteen-year window, with rates ranging from +0.135°C to 
++0.989°C per decade.
+
 ### Data
 
 Repo Structure
@@ -65,6 +96,15 @@ Repo Structure
 ```
 
 ### Pipeline
+
+Built with the files [data.py](scripts/data.py), [analysis.py](scripts/analysis.py), and [baseline_models.py](scripts/baseline_models.py)
+```
+scripts
+├── data.py
+├── baseline_models.py
+└── analysis.py
+```
+Compiled and ran in [problemsolution.ipynb](problemsolution.ipynb)
 
 ## Problem Definition
 
