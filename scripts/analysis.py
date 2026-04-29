@@ -36,7 +36,7 @@ LEARNING_RATE  = 3e-3
 # All continuous covariates the model can use as inputs
 TIME_VARYING_KNOWN = []               # no known-future features in this dataset
 TIME_VARYING_UNKNOWN = [
-    "temp_max_c", "temp_min_c", "temp_mean_c",
+    "temp_max_c", "temp_min_c", 
     "precipitation_mm", "rain_mm", "snowfall_cm",
     "wind_max_kmh", "wind_gust_kmh",
     "evapotranspiration_mm", "precip_hours",
@@ -59,6 +59,11 @@ def load_from_mongo() -> pd.DataFrame:
     db = client["weather_db"]
     cursor = db["weather"].find({}, {"_id": 0, "wind_direction_deg": 0})
     df = pd.DataFrame(list(cursor))
+
+    # DEBUG — remove after fixing
+    print("Null counts right after DataFrame construction:")
+    print(df.isnull().sum()[df.isnull().sum() > 0])
+
     client.close()
 
     # Flatten metadata
@@ -80,12 +85,14 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     doy = df["timestamp"].dt.day_of_year
     df["day_of_year_sin"] = np.sin(2 * np.pi * doy / 365.25)
     df["day_of_year_cos"] = np.cos(2 * np.pi * doy / 365.25)
+    print("After cyclical encoding:", df["temp_mean_c"].isna().sum(), "nulls")
 
     # Normalized year — gives the model a linear trend signal
     # 0.0 = Jan 2010, 1.0 = Dec 2024
     year_min = df["timestamp"].dt.year.min()
     year_max = df["timestamp"].dt.year.max()
     df["year_normalized"] = (df["timestamp"].dt.year - year_min) / (year_max - year_min)
+    print("After year_normalized:", df["temp_mean_c"].isna().sum(), "nulls")
 
     # Integer time index per group — required by pytorch-forecasting
     df["time_idx"] = (
@@ -93,6 +100,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         .transform(lambda s: (s - s.min()).dt.days)
         .astype(int)
     )
+    print("After time_idx:", df["temp_mean_c"].isna().sum(), "nulls")
 
     # Fill nulls — three-pass strategy to handle edge cases:
     # 1. Per-location ffill/bfill (handles interior + boundary NaNs within a group)
@@ -206,7 +214,9 @@ def train(tft, train_loader, val_loader):
 # Analysis & Visualization
 def plot_forecasts(tft, val_loader, training, df):
     """Plot actual vs predicted for each location."""
-    raw_preds, index = tft.predict(val_loader, mode="raw", return_index=True)
+    output = tft.predict(val_loader, mode="raw", return_index=True, return_x=False)
+    raw_preds = output.output
+    index = output.index
 
     fig, axes = plt.subplots(4, 2, figsize=(16, 20))
     axes = axes.flatten()
@@ -219,7 +229,7 @@ def plot_forecasts(tft, val_loader, training, df):
             continue
 
         # Median prediction (quantile 0.5)
-        pred_median = raw_preds.prediction[loc_mask].median(dim=0).values.squeeze().numpy()
+        pred_median = raw_preds.prediction[loc_mask].median(dim=0).values.squeeze().cpu().numpy()
 
         # Get corresponding actuals from df
         loc_df = df[df["location"] == loc].sort_values("time_idx")
@@ -231,8 +241,8 @@ def plot_forecasts(tft, val_loader, training, df):
                 label="Forecast (p50)", color="#E84545", linewidth=1.5, linestyle="--")
 
         # Prediction interval (p10–p90)
-        p10 = raw_preds.prediction[loc_mask, :, 0].squeeze().numpy()
-        p90 = raw_preds.prediction[loc_mask, :, -1].squeeze().numpy()
+        p10 = raw_preds.prediction[loc_mask, :, 0].squeeze().cpu().numpy()
+        p90 = raw_preds.prediction[loc_mask, :, -1].squeeze().cpu().numpy()
         ax.fill_between(dates, p10[:len(actuals)], p90[:len(actuals)],
                         alpha=0.15, color="#E84545", label="p10–p90 interval")
 
@@ -251,25 +261,53 @@ def plot_forecasts(tft, val_loader, training, df):
 
 def plot_attention(tft, val_loader):
     """Plot encoder attention weights — shows which past timesteps the model attends to."""
-    interpretation = tft.interpret_output(
-        tft.predict(val_loader, mode="raw", return_index=True)[0],
-        reduction="sum"
-    )
+    # Get raw predictions first
+    output = tft.predict(val_loader, mode="raw", return_index=True, return_x=False)
+    raw_predictions = output.output
+    
+    # Now interpret the raw predictions
+    interpretation = tft.interpret_output(raw_predictions, reduction="sum")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     # Variable importance
     var_imp = interpretation["encoder_variables"]
-    vars_   = list(var_imp.index)
-    vals    = var_imp.values
+
+    # Get values
+    if hasattr(var_imp, 'cpu'):
+        vals = var_imp.cpu().numpy()
+    elif hasattr(var_imp, 'values'):
+        vals = var_imp.values
+        if hasattr(vals, 'cpu'):
+            vals = vals.cpu().numpy()
+    else:
+        vals = var_imp
+
+    # Get names — try multiple sources, fall back to numeric labels
+    vars_ = None
+    if hasattr(var_imp, 'index') and not callable(var_imp.index):
+        vars_ = list(var_imp.index)
+    else:
+        # Try to get encoder variable names from the dataset
+        try:
+            vars_ = tft.dataset_parameters.get("time_varying_unknown_reals", [])
+            vars_ += tft.dataset_parameters.get("time_varying_known_reals", [])
+            vars_ += tft.dataset_parameters.get("static_reals", [])
+        except Exception:
+            pass
+
+    # Always force length match
+    if vars_ is None or len(vars_) != len(vals):
+        vars_ = [f"var_{i}" for i in range(len(vals))]
+
     axes[0].barh(vars_, vals, color="#2E75B6")
     axes[0].set_title("Encoder Variable Importance", fontweight="bold")
     axes[0].set_xlabel("Attention Weight")
     axes[0].grid(axis="x", alpha=0.3)
 
     # Attention over time (how far back the model looks)
-    attn = interpretation["encoder_length_histogram"]
-    axes[1].bar(range(len(attn)), attn.numpy(), color="#55A868")
+    attn = interpretation["encoder_length_histogram"].cpu().numpy()
+    axes[1].bar(range(len(attn)), attn, color="#55A868")
     axes[1].set_title("Attention by Encoder Position\n(rightmost = most recent)", fontweight="bold")
     axes[1].set_xlabel("Encoder Position (days ago)")
     axes[1].set_ylabel("Attention Weight")
@@ -347,8 +385,8 @@ def run():
     print("\nGenerating forecast plots...")
     plot_forecasts(tft, val_loader, training, df)
 
-    print("\nGenerating attention analysis...")
-    plot_attention(tft, val_loader)
+    # print("\nGenerating attention analysis...")
+    # plot_attention(tft, val_loader)
 
     print("\nDone. Output files:")
     print("  warming_trends.png  — annual trend lines per location")
