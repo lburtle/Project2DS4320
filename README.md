@@ -10,6 +10,59 @@
 ### Data
 
 Repo Structure
+```
+.
+├── LICENSE
+├── PRESSRELEASE.md
+├── README.md
+├── checkpoints
+│   ├── tft-best-v1.ckpt
+│   ├── tft-best-v2.ckpt
+│   ├── tft-best-v3.ckpt
+│   ├── tft-best-v4.ckpt
+│   ├── tft-best-v5.ckpt
+│   ├── tft-best-v6.ckpt
+│   └── tft-best.ckpt
+├── images
+│   ├── baseline_forecasts.png
+│   ├── model_comparison.png
+│   ├── rf_feature_importance.png
+│   ├── temperature_trend.png
+│   ├── tft_forecasts.png
+│   └── warming_trends.png
+├── lightning_logs
+│   ├── version_0
+│   │   └── hparams.yaml
+│   ├── version_1
+│   │   └── hparams.yaml
+│   ├── version_2
+│   │   └── hparams.yaml
+│   ├── version_3
+│   │   └── hparams.yaml
+│   ├── version_4
+│   │   └── hparams.yaml
+│   ├── version_5
+│   │   └── hparams.yaml
+│   ├── version_6
+│   │   └── hparams.yaml
+│   └── version_7
+│       └── hparams.yaml
+├── pipeline.ipynb
+├── pipeline.md
+├── pipeline_files
+│   ├── pipeline_1_10.png
+│   ├── pipeline_1_11.png
+│   ├── pipeline_1_12.png
+│   ├── pipeline_1_13.png
+│   └── pipeline_1_14.png
+├── plots
+├── scripts
+│   ├── analysis.py
+│   ├── baseline_models.py
+│   ├── data.py
+│   └── pressreleaseviz.py
+└── weather_stats.json
+```
 
 ### Pipeline
 
@@ -261,6 +314,77 @@ station/region data from the Open-Meteo API.
 | solar_radiation_mj | 0.44 | 31.60 | 15.57 | seasonally bounded | 0.0% | ERA5 surface radiation RMSE ~5–10 W/m² instantaneous; daily sums more reliable. Max 31.6 MJ/m² consistent with clear-sky Virginia summer. |
 
 ----------------------
+### Problem Solution Pipeline
+
+#### Files
+Jupyter Notebook: **`pipeline.ipynb`** [Here](pipeline.ipynb)
+Markdown Version **`pipeline.md`** [Here](pipeline.md)
+
+## Analysis Rationale
+In my analysis, the first main consideration that I made was in regard to the 
+necessity to capture both short-term weather dynamics and long-term climate trends 
+in a single pipeline. The dataset spans 15 years across 8 locations, which means 
+that any model I chose needed to handle multivariate time series data while also 
+being expressive enough to detect subtle decade-scale shifts. To do this, I 
+implemented a Temporal Fusion Transformer (TFT), which uses multi-head attention to 
+learn which past time steps and input variables matter most for the forecast. I 
+chose TFT specifically because it produces probabilistic forecasts via quantile 
+loss, generating prediction intervals (p10, p50, p90) rather than a single point 
+estimate, which mirrors the importance of communicating uncertainty in any 
+real-world climate projection.
+
+Next, to include an ML method from our past DS courses and to provide an 
+interpretable baseline, I included a Random Forest Regressor alongside a Linear 
+Regression model. The Random Forest does not natively understand time, so I 
+engineered lag features (1, 7, 14, 30, 90, and 365 days) along with rolling means 
+and rolling standard deviations. This effectively flattens the time series into a 
+tabular dataset where each row carries its own temporal context, making the problem 
+solvable by a non-sequential model while still encoding seasonality and 
+autocorrelation. Comparing the two model classes was a deliberate methodological 
+choice — it provides evidence for whether the additional complexity of the TFT 
+actually buys forecast accuracy or whether a simpler tree-based approach is 
+sufficient for this dataset's signal-to-noise ratio.
+
+I also made the choice to add cyclical encodings of day-of-year (sine and cosine) 
+and a normalized year feature spanning 0.0 (Jan 2010) to 1.0 (Dec 2024). The 
+cyclical encoding ensures the model treats December 31 and January 1 as adjacent 
+rather than maximally distant, which is critical for learning seasonality 
+correctly, and the normalized year gives the model an explicit linear trend signal 
+to condition on, which is exactly what is needed for climate change detection. 
+Finally, I deliberately did not pursue more advanced ensembling or hyperparameter 
+search, since training a single TFT already takes substantial compute time on a 
+local machine, and the focus of this project is on the forecasting framework and 
+interpretation rather than squeezing out marginal accuracy gains.
+
+## Results Visualizations
+For the visualizations, the main choice I made was around showing both the local 
+short-term forecast skill and the long-term climate signal in a way that any 
+viewer could interpret. The 90-day forecast plots show the actual mean temperature 
+in blue alongside the TFT's median prediction in red, with the p10–p90 prediction 
+interval shaded behind. This is an explicit detail to convey how the model 
+expresses its uncertainty, so the forecast is not a single line but a distribution 
+that widens as the horizon extends, which is the honest representation of any 
+climate projection.
+
+The annual warming trend plot was chosen as the primary climate-change-specific 
+visualization. It plots the annual mean temperature for each of the 8 Virginia 
+locations from 2010 through 2024, with a linear trend line overlaid in matching 
+color. This makes the warming signal visible at a glance and quantifies the rate 
+in degrees Celsius per decade, which provides a directly interpretable measure 
+that any local planner or policymaker can act on without needing to understand 
+the underlying model.
+
+For interpretability, I included a Random Forest feature importance bar chart 
+which shows which engineered features drove the most predictive power. Lag 
+features and rolling means dominate the rankings, which serves as evidence that 
+the model is genuinely leveraging temporal context rather than spurious 
+correlations between unrelated weather variables. Finally, the model comparison 
+chart presents MAE, RMSE, and R^2 side-by-side across Linear Regression and 
+Random Forest on the held-out 90-day test set, giving a clear quantitative 
+basis for evaluating which model class is best suited to this problem.
+
+<img src="images/tft_forecasts.png" width="75%"/>
+
 
 
 
