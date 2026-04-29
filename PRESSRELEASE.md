@@ -32,3 +32,8 @@ provides an interpretable baseline, with feature importances revealing which pas
 observations most strongly drive the forecast. By combining long-range historical data, 
 multiple model classes, and probabilistic output, the result is a forecast that reflects 
 the complexity of local climate rather than smoothing over it.
+
+## Graph
+This graph shows the steady rise in temperatures across the span of many years:
+
+<img src="images/temperature_trend.png" width="75%"/>
